@@ -1,0 +1,180 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  color: #0f172a;
+  background: #f3f5f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(22, 119, 255, 0.08),
+      transparent 24%
+    ),
+    linear-gradient(180deg, #f6f7f9 0%, #eff2f5 100%);
+  color: #0f172a;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.5);
+  background-clip: padding-box;
+}
+
+.font-display {
+  font-family: "Sora", system-ui, sans-serif;
+}
+
+.software-mono {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.software-date-range-picker .rdp-root {
+  --rdp-accent-color: #1677ff;
+  --rdp-accent-background-color: #eaf3ff;
+  --rdp-day-width: 42px;
+  --rdp-day-height: 42px;
+  --rdp-day_button-width: 40px;
+  --rdp-day_button-height: 40px;
+  --rdp-day_button-border-radius: 14px;
+  --rdp-day_button-border: 1px solid transparent;
+  --rdp-selected-border: 1px solid #1677ff;
+  --rdp-nav_button-width: 36px;
+  --rdp-nav_button-height: 36px;
+  --rdp-months-gap: 1rem;
+  --rdp-range_middle-background-color: rgba(22, 119, 255, 0.12);
+  --rdp-range_middle-color: #0f172a;
+  --rdp-range_start-date-background-color: #1677ff;
+  --rdp-range_end-date-background-color: #1677ff;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+.software-date-range-picker .rdp-months {
+  justify-content: center;
+}
+
+.software-date-range-picker .rdp-month {
+  border-radius: 20px;
+  background: white;
+}
+
+.software-date-range-picker .rdp-month_caption {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.software-date-range-picker .rdp-button_previous,
+.software-date-range-picker .rdp-button_next {
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #64748b;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.software-date-range-picker .rdp-button_previous:hover,
+.software-date-range-picker .rdp-button_next:hover {
+  background: #eff6ff;
+  color: #1677ff;
+}
+
+.software-date-range-picker .rdp-chevron {
+  fill: currentColor;
+}
+
+.software-date-range-picker .rdp-weekday {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.software-date-range-picker .rdp-day_button {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.software-date-range-picker .rdp-day_button:hover:not([disabled]) {
+  border-color: rgba(22, 119, 255, 0.16);
+  background: #eff6ff;
+  color: #1677ff;
+}
+
+.software-date-range-picker .rdp-range_middle .rdp-day_button {
+  border-radius: 10px;
+}
+
+.software-date-range-picker .rdp-today:not(.rdp-selected) .rdp-day_button {
+  border-color: rgba(22, 119, 255, 0.24);
+  color: #1677ff;
+}
+
+.software-date-range-picker .rdp-outside {
+  color: #cbd5e1;
+}
+
+@media (max-width: 640px) {
+  .software-date-range-picker .rdp-root {
+    --rdp-day-width: 38px;
+    --rdp-day-height: 38px;
+    --rdp-day_button-width: 36px;
+    --rdp-day_button-height: 36px;
+  }
+}
