@@ -85,7 +85,11 @@ export function DashboardPage() {
     enabled: !invalidDateRange,
   });
 
-  const ordersQuery = useQuery({ queryKey: ["orders"], queryFn: getOrders });
+  const ordersQuery = useQuery({
+    queryKey: ["orders", "summary"],
+    queryFn: () => getOrders({ view: "summary" }),
+    staleTime: 60_000,
+  });
   const inventoryQuery = useQuery({
     queryKey: ["inventory"],
     queryFn: getInventory,
@@ -601,7 +605,7 @@ export function DashboardPage() {
         )}
       </Panel>
 
-      <Panel className="overflow-hidden">
+      {/* <Panel className="overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5">
           <div>
             <div className="text-lg font-semibold text-slate-900">
@@ -675,7 +679,7 @@ export function DashboardPage() {
             description="Hãy mở rộng khoảng thời gian hoặc tạo thêm giao dịch đã thanh toán."
           />
         )}
-      </Panel>
+      </Panel> */}
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <Panel className="overflow-hidden">

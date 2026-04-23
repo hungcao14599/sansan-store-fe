@@ -17,6 +17,7 @@ import { useToast } from "../components/toast-provider";
 import {
   cancelOrder,
   extractErrorMessage,
+  getOrder,
   getOrders,
   returnPaidOrder,
 } from "../lib/api";
@@ -98,7 +99,12 @@ export function OrdersPage() {
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnReason, setReturnReason] = useState("");
   const [returnItems, setReturnItems] = useState<ReturnDraftItem[]>([]);
-  const query = useQuery({ queryKey: ["orders"], queryFn: getOrders });
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["orders", "summary"],
+    queryFn: () => getOrders({ view: "summary" }),
+    staleTime: 60_000,
+  });
 
   const cancelMutation = useMutation({
     mutationFn: (orderId: string) =>
@@ -261,9 +267,17 @@ export function OrdersPage() {
     setReturnModalOpen(true);
   };
 
-  const openOrderDrawer = (order: Order, returnId?: string) => {
-    setSelected(order);
+  const openOrderDrawer = async (order: Order, returnId?: string) => {
+    setDetailLoadingId(order.id);
     setFocusedReturnId(returnId ?? null);
+
+    try {
+      setSelected(await getOrder(order.id));
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setDetailLoadingId(null);
+    }
   };
 
   const submitReturn = () => {
@@ -424,6 +438,7 @@ export function OrdersPage() {
                         <Button
                           variant="soft"
                           size="sm"
+                          busy={detailLoadingId === row.order.id}
                           onClick={() =>
                             openOrderDrawer(
                               row.order,

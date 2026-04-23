@@ -30,7 +30,9 @@ export function AppShell() {
     queryKey: ["me"],
     queryFn: getMe,
     enabled: Boolean(token),
+    initialData: user ?? undefined,
     retry: false,
+    staleTime: 60_000,
   });
 
   useEffect(() => {

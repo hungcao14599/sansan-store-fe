@@ -1,7 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import dayjs from "dayjs";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "../components/icons";
 import { ProductAvatar } from "../components/product-avatar";
@@ -17,12 +22,11 @@ import {
   addOrderItem,
   cancelOrder,
   checkoutOrder,
-  createOrder,
+  createOrderWithItem,
   extractErrorMessage,
-  getOrder,
   getOrders,
-  getProducts,
   removeOrderItem,
+  searchProducts,
   updateOrderItem,
 } from "../lib/api";
 import { calculateCheckoutPreview } from "../lib/tax";
@@ -51,6 +55,9 @@ type TemporaryTab = {
 
 const TEMP_TABS_STORAGE_KEY = "pos-temp-tabs";
 const LEGACY_TEMP_ORDER_IDS_STORAGE_KEY = "pos-temp-order-ids";
+const posOrdersQueryKey = ["orders", "pos"] as const;
+const TEMP_ORDER_ID_PREFIX = "temp-order-";
+const PRODUCT_SUGGESTION_BATCH_SIZE = 20;
 
 export function PosPage() {
   const navigate = useNavigate();
@@ -66,37 +73,48 @@ export function PosPage() {
   const [scanValue, setScanValue] = useState("");
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>(
-    {},
+    {}
   );
   const [orderDrafts, setOrderDrafts] = useState<Record<string, OrderDraft>>(
-    {},
+    {}
   );
   const [temporaryTabs, setTemporaryTabs] = useState<TemporaryTab[]>(() =>
-    readTemporaryTabs(),
+    readTemporaryTabs()
   );
   const [searchFocused, setSearchFocused] = useState(false);
+  const deferredSearchValue = useDeferredValue(scanValue.trim());
 
-  const productsQuery = useQuery({
-    queryKey: ["products"],
-    queryFn: getProducts,
+  const productsQuery = useInfiniteQuery({
+    queryKey: ["products", "pos-search", deferredSearchValue],
+    queryFn: ({ pageParam }) =>
+      searchProducts({
+        q: deferredSearchValue || undefined,
+        limit: PRODUCT_SUGGESTION_BATCH_SIZE,
+        offset: pageParam,
+      }),
+    enabled: Boolean(activeTabId),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
+    staleTime: 30_000,
   });
 
   const ordersQuery = useQuery({
-    queryKey: ["orders"],
-    queryFn: getOrders,
+    queryKey: posOrdersQueryKey,
+    queryFn: () => getOrders({ status: "PENDING", view: "pos" }),
+    staleTime: 20_000,
   });
 
   const pendingOrders = useMemo(
     () =>
       sortPendingOrders(
-        (ordersQuery.data ?? []).filter((item) => item.status === "PENDING"),
+        (ordersQuery.data ?? []).filter((item) => item.status === "PENDING")
       ),
-    [ordersQuery.data],
+    [ordersQuery.data]
   );
 
   const activeTab = useMemo(
     () => temporaryTabs.find((tab) => tab.id === activeTabId) ?? null,
-    [activeTabId, temporaryTabs],
+    [activeTabId, temporaryTabs]
   );
 
   const activeOrderId = activeTab?.orderId ?? null;
@@ -105,37 +123,22 @@ export function PosPage() {
     () =>
       (ordersQuery.data ?? []).find((item) => item.id === activeOrderId) ??
       null,
-    [activeOrderId, ordersQuery.data],
+    [activeOrderId, ordersQuery.data]
   );
 
   const activeDraft = activeTabId
-    ? (orderDrafts[activeTabId] ?? createDefaultDraft(activeOrder?.notes))
+    ? orderDrafts[activeTabId] ?? createDefaultDraft(activeOrder?.notes)
     : createDefaultDraft();
 
-  const filteredProducts = useMemo(() => {
-    const keyword = scanValue.trim().toLowerCase();
-    const products = productsQuery.data ?? [];
-
-    return products.filter((item) => {
-      if (!item.isActive) {
-        return false;
-      }
-
-      if (!keyword) {
-        return true;
-      }
-
-      return [item.name, item.sku, item.barcode ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword);
-    });
-  }, [productsQuery.data, scanValue]);
+  const searchSuggestions = useMemo(
+    () => productsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [productsQuery.data]
+  );
 
   const productLookup = useMemo(() => {
     const lookup = new Map<string, Product>();
 
-    for (const product of productsQuery.data ?? []) {
+    for (const product of searchSuggestions) {
       if (!product.isActive) {
         continue;
       }
@@ -150,12 +153,13 @@ export function PosPage() {
     }
 
     return lookup;
-  }, [productsQuery.data]);
+  }, [searchSuggestions]);
 
-  const searchSuggestions = useMemo(
-    () => filteredProducts.slice(0, 8),
-    [filteredProducts],
-  );
+  const productById = useMemo(() => {
+    return new Map(searchSuggestions.map((product) => [product.id, product]));
+  }, [searchSuggestions]);
+
+  const hasMoreSearchSuggestions = Boolean(productsQuery.hasNextPage);
 
   const draftItems = useMemo(
     () =>
@@ -176,22 +180,22 @@ export function PosPage() {
           taxAmount,
         };
       }),
-    [activeOrder?.items, itemQuantities],
+    [activeOrder?.items, itemQuantities]
   );
 
   const checkoutPreview = useMemo(
     () => calculateCheckoutPreview(draftItems, activeDraft.discount),
-    [activeDraft.discount, draftItems],
+    [activeDraft.discount, draftItems]
   );
 
   const draftItemPreviewMap = useMemo(
     () => new Map(draftItems.map((item) => [item.id, item])),
-    [draftItems],
+    [draftItems]
   );
 
   const totalUnits = useMemo(
     () => draftItems.reduce((sum, item) => sum + item.quantity, 0),
-    [draftItems],
+    [draftItems]
   );
 
   const cashChange =
@@ -199,7 +203,7 @@ export function PosPage() {
       ? Math.max(
           (activeDraft.receivedAmount ?? checkoutPreview.total) -
             checkoutPreview.total,
-          0,
+          0
         )
       : 0;
 
@@ -210,7 +214,7 @@ export function PosPage() {
 
   const updateDraft = (
     orderId: string,
-    patch: Partial<OrderDraft> | ((current: OrderDraft) => OrderDraft),
+    patch: Partial<OrderDraft> | ((current: OrderDraft) => OrderDraft)
   ) => {
     setOrderDrafts((current) => {
       const existing = current[orderId] ?? createDefaultDraft();
@@ -260,8 +264,9 @@ export function PosPage() {
         reason: "Closed pending order from POS tabs",
       }),
     onSuccess: async (_order, tab) => {
+      removePosOrder(tab.orderId!);
       setTemporaryTabs((current) =>
-        current.filter((item) => item.id !== tab.id),
+        current.filter((item) => item.id !== tab.id)
       );
       setOrderDrafts((current) => {
         const next = { ...current };
@@ -274,7 +279,7 @@ export function PosPage() {
       setItemQuantities({});
       syncScanValue("");
       lastHandledScanRef.current = null;
-      await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["orders", "summary"] });
     },
     onError: (error) => {
       toast.error(extractErrorMessage(error));
@@ -314,7 +319,7 @@ export function PosPage() {
     const pendingIdSet = new Set(pendingOrders.map((item) => item.id));
     setTemporaryTabs((current) => {
       const next = current.filter(
-        (tab) => !tab.orderId || pendingIdSet.has(tab.orderId),
+        (tab) => !tab.orderId || pendingIdSet.has(tab.orderId)
       );
       return next.length === current.length ? current : next;
     });
@@ -400,45 +405,82 @@ export function PosPage() {
     return () => window.removeEventListener("keydown", handleShortcuts);
   }, []);
 
-  const invalidateOrders = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["orders"] });
+  const upsertPosOrder = (order: Order) => {
+    queryClient.setQueryData<Order[]>(posOrdersQueryKey, (current) => [
+      order,
+      ...(current ?? []).filter((item) => item.id !== order.id),
+    ]);
   };
 
-  const ensureOrderForTab = async (tabId: string) => {
+  const removePosOrder = (orderId: string) => {
+    queryClient.setQueryData<Order[]>(posOrdersQueryKey, (current) =>
+      (current ?? []).filter((item) => item.id !== orderId)
+    );
+  };
+
+  const createOrderForTabWithItem = async (
+    tabId: string,
+    productId: string,
+    quantity: number
+  ) => {
     const tab = temporaryTabs.find((item) => item.id === tabId);
     if (!tab) {
       return null;
     }
 
     if (tab.orderId) {
-      return { orderId: tab.orderId, created: false as const };
+      return null;
     }
 
     const pendingPromise = orderCreationPromisesRef.current[tabId];
     if (pendingPromise) {
-      const pendingOrder = await pendingPromise;
-      return { orderId: pendingOrder.id, created: false as const };
+      return pendingPromise;
     }
 
     const draft = orderDrafts[tabId] ?? createDefaultDraft();
-    const createPromise = createOrder({
+    const optimisticOrderId = `${TEMP_ORDER_ID_PREFIX}${tabId}`;
+    const product = productById.get(productId);
+
+    if (product) {
+      upsertPosOrder(
+        buildOptimisticOrder(optimisticOrderId, product, quantity, draft)
+      );
+      setTemporaryTabs((current) =>
+        current.map((item) =>
+          item.id === tabId ? { ...item, orderId: optimisticOrderId } : item
+        )
+      );
+      lastHandledScanRef.current = null;
+      syncScanValue("");
+      window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
+
+    const createPromise = createOrderWithItem({
+      productId,
+      quantity,
       customerName: draft.customerSearch.trim() || undefined,
       notes: draft.notes.trim() || undefined,
     })
       .then((order) => {
-        queryClient.setQueryData<Order[]>(["orders"], (current) => [
-          order,
-          ...(current ?? []).filter((item) => item.id !== order.id),
-        ]);
+        removePosOrder(optimisticOrderId);
+        upsertPosOrder(order);
         setTemporaryTabs((current) =>
           current.map((item) =>
-            item.id === tabId ? { ...item, orderId: order.id } : item,
-          ),
+            item.id === tabId ? { ...item, orderId: order.id } : item
+          )
         );
-        void queryClient.invalidateQueries({ queryKey: ["orders"] });
+        lastHandledScanRef.current = null;
+        syncScanValue("");
+        window.setTimeout(() => searchInputRef.current?.focus(), 0);
         return order;
       })
       .catch((error) => {
+        removePosOrder(optimisticOrderId);
+        setTemporaryTabs((current) =>
+          current.map((item) =>
+            item.id === tabId ? { ...item, orderId: null } : item
+          )
+        );
         toast.error(extractErrorMessage(error));
         throw error;
       })
@@ -447,8 +489,7 @@ export function PosPage() {
       });
 
     orderCreationPromisesRef.current[tabId] = createPromise;
-    const createdOrder = await createPromise;
-    return { orderId: createdOrder.id, created: true as const };
+    return createPromise;
   };
 
   const addItemMutation = useMutation({
@@ -461,13 +502,38 @@ export function PosPage() {
         productId: payload.productId,
         quantity: payload.quantity,
       }),
-    onSuccess: async () => {
+    onMutate: (payload) => {
+      const previousOrders =
+        queryClient.getQueryData<Order[]>(posOrdersQueryKey) ?? [];
+      const product = productById.get(payload.productId);
+      const order = previousOrders.find((item) => item.id === payload.orderId);
+
+      if (!product || !order) {
+        return { previousOrders };
+      }
+
+      upsertPosOrder(
+        buildOptimisticOrder(
+          payload.orderId,
+          product,
+          payload.quantity,
+          activeDraft,
+          order
+        )
+      );
+
+      return { previousOrders };
+    },
+    onSuccess: (order) => {
+      upsertPosOrder(order);
       lastHandledScanRef.current = null;
       syncScanValue("");
-      await invalidateOrders();
       window.setTimeout(() => searchInputRef.current?.focus(), 0);
     },
-    onError: (error) => {
+    onError: (error, _payload, context) => {
+      if (context?.previousOrders) {
+        queryClient.setQueryData(posOrdersQueryKey, context.previousOrders);
+      }
       toast.error(extractErrorMessage(error));
     },
   });
@@ -477,8 +543,8 @@ export function PosPage() {
       updateOrderItem(activeOrderId!, payload.itemId, {
         quantity: payload.quantity,
       }),
-    onSuccess: async () => {
-      await invalidateOrders();
+    onSuccess: (order) => {
+      upsertPosOrder(order);
     },
     onError: (error) => {
       toast.error(extractErrorMessage(error));
@@ -487,8 +553,8 @@ export function PosPage() {
 
   const removeItemMutation = useMutation({
     mutationFn: (itemId: string) => removeOrderItem(activeOrderId!, itemId),
-    onSuccess: async () => {
-      await invalidateOrders();
+    onSuccess: (order) => {
+      upsertPosOrder(order);
     },
     onError: (error) => {
       toast.error(extractErrorMessage(error));
@@ -508,15 +574,20 @@ export function PosPage() {
             ? Number(activeDraft.receivedAmount)
             : checkoutPreview.total,
         paymentReference: activeDraft.paymentReference || undefined,
-      }),
+    }),
     onSuccess: async (_order) => {
       const completedTabId = activeTabId!;
+      if (activeOrderId) {
+        removePosOrder(activeOrderId);
+      }
       toast.success(
-        `Thanh toán thành công. Đơn đã chuyển sang ${formatOrderStatus("PAID")}.`,
+        `Thanh toán thành công. Đơn đã chuyển sang ${formatOrderStatus(
+          "PAID"
+        )}.`
       );
 
       setTemporaryTabs((current) =>
-        current.filter((tab) => tab.id !== completedTabId),
+        current.filter((tab) => tab.id !== completedTabId)
       );
       setOrderDrafts((current) => {
         const next = { ...current };
@@ -529,7 +600,7 @@ export function PosPage() {
       lastHandledScanRef.current = null;
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory"] }),
         queryClient.invalidateQueries({ queryKey: ["products"] }),
         queryClient.invalidateQueries({ queryKey: ["report"] }),
@@ -550,20 +621,17 @@ export function PosPage() {
       return;
     }
 
-    let orderId = activeOrderId;
-    let createdFreshOrder = false;
+    const orderId = activeOrderId;
 
-    if (!orderId) {
-      try {
-        const ensured = await ensureOrderForTab(activeTabId);
-        orderId = ensured?.orderId ?? null;
-        createdFreshOrder = ensured?.created ?? false;
-      } catch {
-        return;
-      }
+    if (isTemporaryOrderId(orderId)) {
+      return;
     }
 
     if (!orderId) {
+      try {
+        await createOrderForTabWithItem(activeTabId, productId, quantity);
+      } catch {
+      }
       return;
     }
 
@@ -574,29 +642,7 @@ export function PosPage() {
         quantity,
       });
     } catch {
-      if (!createdFreshOrder) {
-        return;
-      }
-
-      try {
-        const latestOrder = await getOrder(orderId);
-        if (
-          latestOrder.status === "PENDING" &&
-          latestOrder.items.length === 0
-        ) {
-          await cancelOrder(orderId, {
-            reason: "Rollback empty POS order after initial item add failed",
-          });
-          setTemporaryTabs((current) =>
-            current.map((item) =>
-              item.id === activeTabId ? { ...item, orderId: null } : item,
-            ),
-          );
-          await queryClient.invalidateQueries({ queryKey: ["orders"] });
-        }
-      } catch {
-        // keep the original add-item error toast
-      }
+      return;
     }
   };
 
@@ -621,7 +667,7 @@ export function PosPage() {
     if (!matchedProduct || addItemMutation.isPending) {
       if (showNotFoundMessage && scanValueRef.current.trim()) {
         toast.warning(
-          "Không tìm thấy sản phẩm theo barcode, SKU hoặc từ khóa.",
+          "Không tìm thấy sản phẩm theo barcode, SKU hoặc từ khóa."
         );
       }
       return;
@@ -655,8 +701,8 @@ export function PosPage() {
       const isSearchInputFocused = activeElement === searchInputElement;
       const isEditableElement = Boolean(
         activeElement &&
-        (activeElement.isContentEditable ||
-          ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName)),
+          (activeElement.isContentEditable ||
+            ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName))
       );
 
       if (isEditableElement && !isSearchInputFocused) {
@@ -735,7 +781,7 @@ export function PosPage() {
   const commitItemQuantity = (itemId: string, fallbackQuantity: number) => {
     const nextQuantity = Math.max(
       itemQuantities[itemId] ?? fallbackQuantity,
-      1,
+      1
     );
     setItemQuantities((current) => ({
       ...current,
@@ -764,8 +810,7 @@ export function PosPage() {
     });
   };
 
-  const showSearchDropdown =
-    Boolean(activeTabId) && searchFocused && scanValue.trim().length > 0;
+  const showSearchDropdown = Boolean(activeTabId) && searchFocused;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -800,8 +845,30 @@ export function PosPage() {
 
             {showSearchDropdown ? (
               <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
-                {searchSuggestions.length ? (
-                  <div className="max-h-[420px] overflow-y-auto py-2">
+                {productsQuery.isLoading ? (
+                  <div className="flex items-center gap-3 px-4 py-5 text-sm text-slate-500">
+                    <Spinner className="h-4 w-4 border-2" />
+                    Đang tải sản phẩm...
+                  </div>
+                ) : searchSuggestions.length ? (
+                  <div
+                    className="max-h-[420px] overflow-y-auto py-2"
+                    onScroll={(event) => {
+                      const element = event.currentTarget;
+                      const distanceToBottom =
+                        element.scrollHeight -
+                        element.scrollTop -
+                        element.clientHeight;
+
+                      if (distanceToBottom > 80 || !hasMoreSearchSuggestions) {
+                        return;
+                      }
+
+                      if (!productsQuery.isFetchingNextPage) {
+                        void productsQuery.fetchNextPage();
+                      }
+                    }}
+                  >
                     {searchSuggestions.map((product) => (
                       <button
                         key={product.id}
@@ -830,6 +897,17 @@ export function PosPage() {
                         </div>
                       </button>
                     ))}
+                    {hasMoreSearchSuggestions ? (
+                      <div className="px-4 py-3 text-center text-xs font-medium text-slate-400">
+                        {productsQuery.isFetchingNextPage
+                          ? "Đang tải thêm sản phẩm..."
+                          : "Kéo xuống để tải thêm sản phẩm"}
+                      </div>
+                    ) : (
+                      <div className="px-4 py-3 text-center text-xs text-slate-300">
+                        Đã hiển thị {searchSuggestions.length} sản phẩm
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="px-4 py-5 text-sm text-slate-500">
@@ -855,7 +933,7 @@ export function PosPage() {
                     "group flex h-11 items-center gap-3 rounded-t-[14px] rounded-b-md border px-4 text-sm font-semibold transition",
                     active
                       ? "border-white bg-white text-slate-900 shadow-[0_6px_18px_rgba(15,23,42,0.14)]"
-                      : "border-white/10 bg-transparent text-white hover:bg-white/10",
+                      : "border-white/10 bg-transparent text-white hover:bg-white/10"
                   )}
                   onClick={() => switchOrder(tab.id)}
                   onKeyDown={(event) => {
@@ -869,13 +947,13 @@ export function PosPage() {
                     name={active ? "swapHorizontal" : "receipt"}
                     className={cn(
                       "h-4 w-4",
-                      active ? "text-[#1677ff]" : "text-white",
+                      active ? "text-[#1677ff]" : "text-white"
                     )}
                   />
                   <span
                     className={cn(
                       "whitespace-nowrap",
-                      active ? "text-[15px]" : "text-[14px]",
+                      active ? "text-[15px]" : "text-[14px]"
                     )}
                   >
                     Hóa đơn {index + 1}
@@ -885,14 +963,14 @@ export function PosPage() {
                       "rounded-md p-1 text-xs transition",
                       active
                         ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        : "text-white/80 hover:bg-white/10 hover:text-white",
+                        : "text-white/80 hover:bg-white/10 hover:text-white"
                     )}
                     disabled={isClosing}
                     onClick={(event) => {
                       event.stopPropagation();
                       if (!tab.orderId) {
                         setTemporaryTabs((current) =>
-                          current.filter((item) => item.id !== tab.id),
+                          current.filter((item) => item.id !== tab.id)
                         );
                         setOrderDrafts((current) => {
                           const next = { ...current };
@@ -1036,7 +1114,7 @@ export function PosPage() {
                                   "w-full border-none bg-transparent pb-1 text-center text-[15px] outline-none",
                                   draftQuantity > 1
                                     ? "text-red-500"
-                                    : "text-slate-900",
+                                    : "text-slate-900"
                                 )}
                               />
                             </div>
@@ -1048,7 +1126,7 @@ export function PosPage() {
 
                           <div className="software-mono text-right text-[16px] font-semibold text-slate-900">
                             {formatMoneyValue(
-                              preview?.lineTotal ?? item.lineTotal,
+                              preview?.lineTotal ?? item.lineTotal
                             )}
                           </div>
 
@@ -1155,7 +1233,7 @@ export function PosPage() {
               <PaymentSummaryLine
                 label="Khách thanh toán"
                 value={formatMoneyValue(
-                  activeDraft.receivedAmount ?? checkoutPreview.total,
+                  activeDraft.receivedAmount ?? checkoutPreview.total
                 )}
               />
 
@@ -1208,9 +1286,12 @@ export function PosPage() {
                       <div className="mb-2 text-sm text-slate-500">
                         Tiền thối
                       </div>
-                      <div className="flex h-10 items-center justify-end rounded-md border border-slate-200/90 bg-slate-50/90 px-4 software-mono text-[15px] font-semibold text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_1px_2px_rgba(15,23,42,0.03)]">
-                        {formatMoneyValue(cashChange)}
-                      </div>
+
+                      <CurrencyInput
+                        value={cashChange}
+                        disabled={true}
+                        className="h-10 rounded-md bg-white"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1333,6 +1414,116 @@ function createTemporaryTab(): TemporaryTab {
   };
 }
 
+function isTemporaryOrderId(orderId?: string | null) {
+  return Boolean(orderId?.startsWith(TEMP_ORDER_ID_PREFIX));
+}
+
+function buildOptimisticOrder(
+  orderId: string,
+  product: Product,
+  quantity: number,
+  draft: OrderDraft,
+  existingOrder?: Order
+): Order {
+  const now = new Date().toISOString();
+  const existingItems = existingOrder?.items ?? [];
+  const existingItem = existingItems.find(
+    (item) => item.productId === product.id
+  );
+  const nextItems = existingItem
+    ? existingItems.map((item) =>
+        item.id === existingItem.id
+          ? buildOptimisticOrderItem(
+              orderId,
+              product,
+              item.quantity + quantity,
+              item.id
+            )
+          : item
+      )
+    : [
+        ...existingItems,
+        buildOptimisticOrderItem(orderId, product, quantity),
+      ];
+  const totals = calculateOptimisticOrderTotals(nextItems);
+
+  return {
+    id: orderId,
+    orderNumber: existingOrder?.orderNumber ?? "Đang tạo...",
+    status: "PENDING",
+    subtotal: totals.subtotal,
+    discount: totals.discount,
+    tax: totals.tax,
+    total: totals.total,
+    notes: existingOrder?.notes ?? draft.notes,
+    customerName:
+      existingOrder?.customerName ?? (draft.customerSearch.trim() || null),
+    createdAt: existingOrder?.createdAt ?? now,
+    paidAt: existingOrder?.paidAt ?? null,
+    cancelledAt: existingOrder?.cancelledAt ?? null,
+    createdBy: existingOrder?.createdBy,
+    items: nextItems,
+    paymentTransactions: existingOrder?.paymentTransactions ?? [],
+    revenueLogs: existingOrder?.revenueLogs ?? [],
+    returns: existingOrder?.returns ?? [],
+    invoice: existingOrder?.invoice ?? null,
+  };
+}
+
+function buildOptimisticOrderItem(
+  orderId: string,
+  product: Product,
+  quantity: number,
+  itemId = `${orderId}-item-${product.id}`
+) {
+  const unitPrice = toNumber(product.price);
+  const taxRate = toNumber(product.taxRate);
+  const lineSubtotal = roundCurrency(unitPrice * quantity);
+  const discountAmount = 0;
+  const taxableAmount = lineSubtotal - discountAmount;
+  const taxAmount = roundCurrency((taxableAmount * taxRate) / 100);
+  const lineTotal = roundCurrency(taxableAmount + taxAmount);
+
+  return {
+    id: itemId,
+    orderId,
+    productId: product.id,
+    productName: product.name,
+    sku: product.sku,
+    unit: product.unit,
+    unitPrice,
+    quantity,
+    taxCategory: product.taxCategory,
+    taxRate,
+    lineSubtotal,
+    discountAmount,
+    taxableAmount,
+    taxAmount,
+    lineTotal,
+  };
+}
+
+function calculateOptimisticOrderTotals(items: Order["items"]) {
+  const subtotal = roundCurrency(
+    items.reduce((sum, item) => sum + toNumber(item.lineSubtotal), 0)
+  );
+  const discount = roundCurrency(
+    items.reduce((sum, item) => sum + toNumber(item.discountAmount), 0)
+  );
+  const tax = roundCurrency(
+    items.reduce((sum, item) => sum + toNumber(item.taxAmount), 0)
+  );
+  const total = roundCurrency(
+    items.reduce((sum, item) => sum + toNumber(item.lineTotal), 0)
+  );
+
+  return { subtotal, discount, tax, total };
+}
+
+function roundCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function readTemporaryTabs(): TemporaryTab[] {
   if (typeof window === "undefined") {
     return [];
@@ -1348,7 +1539,7 @@ function readTemporaryTabs(): TemporaryTab[] {
     }
 
     const legacyRaw = window.sessionStorage.getItem(
-      LEGACY_TEMP_ORDER_IDS_STORAGE_KEY,
+      LEGACY_TEMP_ORDER_IDS_STORAGE_KEY
     );
     if (!legacyRaw) {
       return [];
@@ -1384,18 +1575,18 @@ function writeTemporaryTabs(tabs: TemporaryTab[]) {
 function isTemporaryTab(value: unknown): value is TemporaryTab {
   return Boolean(
     value &&
-    typeof value === "object" &&
-    "id" in value &&
-    typeof value.id === "string" &&
-    "orderId" in value &&
-    (typeof value.orderId === "string" || value.orderId === null),
+      typeof value === "object" &&
+      "id" in value &&
+      typeof value.id === "string" &&
+      "orderId" in value &&
+      (typeof value.orderId === "string" || value.orderId === null)
   );
 }
 
 function sortPendingOrders(orders: Order[]) {
   return [...orders].sort(
     (left, right) =>
-      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
   );
 }
 
@@ -1425,7 +1616,7 @@ function PaymentSummaryLine({
       <span
         className={cn(
           "text-[15px]",
-          highlight ? "font-semibold text-slate-900" : "text-slate-600",
+          highlight ? "font-semibold text-slate-900" : "text-slate-600"
         )}
       >
         {label}
@@ -1435,7 +1626,7 @@ function PaymentSummaryLine({
           "software-mono text-right text-[15px]",
           highlight
             ? "text-[18px] font-semibold text-[#1677ff]"
-            : "text-slate-900",
+            : "text-slate-900"
         )}
       >
         {value}

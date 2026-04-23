@@ -69,6 +69,25 @@ export async function getProducts() {
   return response.data;
 }
 
+export type ProductSearchParams = {
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type ProductSearchResponse = {
+  items: Product[];
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
+export async function searchProducts(params?: ProductSearchParams) {
+  const response = await api.get<ProductSearchResponse>("/products/search", {
+    params,
+  });
+  return response.data;
+}
+
 export async function createProduct(payload: Record<string, unknown>) {
   const response = await api.post<Product>("/products", payload);
   return response.data;
@@ -111,8 +130,23 @@ export async function createOrder(payload?: {
   return response.data;
 }
 
-export async function getOrders() {
-  const response = await api.get<Order[]>("/orders");
+export async function createOrderWithItem(payload: {
+  productId: string;
+  quantity: number;
+  customerName?: string;
+  notes?: string;
+}) {
+  const response = await api.post<Order>("/orders/with-item", payload);
+  return response.data;
+}
+
+export type OrderListParams = {
+  status?: Order["status"];
+  view?: "detail" | "summary" | "pos";
+};
+
+export async function getOrders(params?: OrderListParams) {
+  const response = await api.get<Order[]>("/orders", { params });
   return response.data;
 }
 
