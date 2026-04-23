@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { Icon } from "./icons";
 import { Button, Spinner } from "./ui";
 import { getMe } from "../lib/api";
@@ -10,11 +16,36 @@ import { formatUserRole } from "../lib/utils";
 import { useAuthStore } from "../store/auth-store";
 
 const navigationItems = [
-  { key: "/dashboard", label: "Dashboard", icon: "chart" as const },
-  { key: "/pos", label: "Bán hàng", icon: "bag" as const },
-  { key: "/products", label: "Hàng hóa", icon: "tag" as const },
-  { key: "/inventory", label: "Quản lý tồn kho", icon: "grid" as const },
-  { key: "/invoices", label: "Hóa đơn", icon: "receipt" as const },
+  {
+    key: "/dashboard",
+    label: "Dashboard",
+    icon: "chart" as const,
+    roles: ["ADMIN"] as const,
+  },
+  {
+    key: "/pos",
+    label: "Bán hàng",
+    icon: "bag" as const,
+    roles: ["ADMIN", "STAFF"] as const,
+  },
+  {
+    key: "/products",
+    label: "Hàng hóa",
+    icon: "tag" as const,
+    roles: ["ADMIN"] as const,
+  },
+  {
+    key: "/inventory",
+    label: "Quản lý tồn kho",
+    icon: "grid" as const,
+    roles: ["ADMIN"] as const,
+  },
+  {
+    key: "/invoices",
+    label: "Hóa đơn",
+    icon: "receipt" as const,
+    roles: ["ADMIN", "STAFF"] as const,
+  },
 ];
 
 export function AppShell() {
@@ -34,6 +65,16 @@ export function AppShell() {
     retry: false,
     staleTime: 60_000,
   });
+  const currentUser = data ?? user;
+
+  const allowedNavigationItems = useMemo(
+    () =>
+      navigationItems.filter(
+        (item) =>
+          !currentUser || item.roles.some((role) => role === currentUser.role)
+      ),
+    [currentUser?.role]
+  );
 
   useEffect(() => {
     if (data) {
@@ -57,12 +98,20 @@ export function AppShell() {
     return segment;
   }, [location.pathname]);
 
-  if (isLoading && !user) {
+  if (isLoading && !currentUser) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f3f5f7] text-[#1677ff]">
         <Spinner className="h-8 w-8 border-[3px]" />
       </div>
     );
+  }
+
+  if (
+    currentUser &&
+    currentUser.role !== "ADMIN" &&
+    !allowedNavigationItems.some((item) => item.key === activePath)
+  ) {
+    return <Navigate to="/pos" replace />;
   }
 
   if (activePath === "/pos") {
@@ -93,17 +142,17 @@ export function AppShell() {
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500">
               {clock.format("DD/MM/YYYY HH:mm")}
             </div>
-            {user ? (
+            {currentUser ? (
               <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white">
-                  {user.fullName.charAt(0)}
+                  {currentUser.fullName.charAt(0)}
                 </div>
                 <div className="leading-tight">
                   <div className="text-sm font-medium text-slate-900">
-                    {user.fullName}
+                    {currentUser.fullName}
                   </div>
                   <div className="text-xs text-slate-400">
-                    {formatUserRole(user.role)}
+                    {formatUserRole(currentUser.role)}
                   </div>
                 </div>
               </div>
@@ -123,7 +172,7 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto px-5 pb-3 lg:px-8">
-          {navigationItems.map((item) => (
+          {allowedNavigationItems.map((item) => (
             <NavLink
               key={item.key}
               to={item.key}
@@ -178,7 +227,7 @@ export function AppShell() {
                     Điều hướng
                   </div>
                   <nav className="overflow-hidden rounded-md border border-slate-200/80 bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
-                    {navigationItems.map((item, index) => (
+                    {allowedNavigationItems.map((item, index) => (
                       <NavLink
                         key={item.key}
                         to={item.key}
@@ -221,14 +270,16 @@ export function AppShell() {
                 <div className="rounded-md border border-slate-200/80 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                   <div className="flex items-center gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(15,23,42,0.14)]">
-                      {user?.fullName.charAt(0) ?? "U"}
+                      {currentUser?.fullName.charAt(0) ?? "U"}
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-slate-900">
-                        {user?.fullName ?? "System User"}
+                        {currentUser?.fullName ?? "System User"}
                       </div>
                       <div className="truncate text-xs uppercase tracking-[0.14em] text-slate-400">
-                        {user?.role ? formatUserRole(user.role) : "Người dùng"}
+                        {currentUser?.role
+                          ? formatUserRole(currentUser.role)
+                          : "Người dùng"}
                       </div>
                     </div>
                   </div>

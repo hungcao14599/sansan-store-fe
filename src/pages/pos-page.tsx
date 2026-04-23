@@ -4,7 +4,6 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import dayjs from "dayjs";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -15,7 +14,6 @@ import {
   CurrencyInput,
   EmptyState,
   Spinner,
-  TextInput,
 } from "../components/ui";
 import { useToast } from "../components/toast-provider";
 import {
@@ -64,6 +62,7 @@ export function PosPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === "ADMIN";
   const searchInputRef = useRef<HTMLInputElement>(null);
   const customerInputRef = useRef<HTMLInputElement>(null);
   const scanValueRef = useRef("");
@@ -81,7 +80,7 @@ export function PosPage() {
   const [temporaryTabs, setTemporaryTabs] = useState<TemporaryTab[]>(() =>
     readTemporaryTabs()
   );
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const deferredSearchValue = useDeferredValue(scanValue.trim());
 
   const productsQuery = useInfiniteQuery({
@@ -92,7 +91,9 @@ export function PosPage() {
         limit: PRODUCT_SUGGESTION_BATCH_SIZE,
         offset: pageParam,
       }),
-    enabled: Boolean(activeTabId),
+    enabled:
+      Boolean(activeTabId) &&
+      (searchDropdownOpen || Boolean(deferredSearchValue)),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30_000,
@@ -239,6 +240,7 @@ export function PosPage() {
 
   const switchOrder = (tabId: string) => {
     setActiveTabId(tabId);
+    setSearchDropdownOpen(false);
     syncScanValue("");
     lastHandledScanRef.current = null;
     window.setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -252,6 +254,7 @@ export function PosPage() {
       [nextTab.id]: createDefaultDraft(),
     }));
     setActiveTabId(nextTab.id);
+    setSearchDropdownOpen(false);
     setItemQuantities({});
     syncScanValue("");
     lastHandledScanRef.current = null;
@@ -275,6 +278,7 @@ export function PosPage() {
       });
       if (activeTabId === tab.id) {
         setActiveTabId(null);
+        setSearchDropdownOpen(false);
       }
       setItemQuantities({});
       syncScanValue("");
@@ -359,6 +363,12 @@ export function PosPage() {
   }, []);
 
   useEffect(() => {
+    if (!activeTabId) {
+      setSearchDropdownOpen(false);
+    }
+  }, [activeTabId]);
+
+  useEffect(() => {
     const next: Record<string, number> = {};
     for (const item of activeOrder?.items ?? []) {
       next[item.id] = item.quantity;
@@ -392,6 +402,7 @@ export function PosPage() {
     const handleShortcuts = (event: KeyboardEvent) => {
       if (event.key === "F3") {
         event.preventDefault();
+        setSearchDropdownOpen(true);
         searchInputRef.current?.focus();
       }
 
@@ -574,7 +585,7 @@ export function PosPage() {
             ? Number(activeDraft.receivedAmount)
             : checkoutPreview.total,
         paymentReference: activeDraft.paymentReference || undefined,
-    }),
+      }),
     onSuccess: async (_order) => {
       const completedTabId = activeTabId!;
       if (activeOrderId) {
@@ -595,6 +606,7 @@ export function PosPage() {
         return next;
       });
       setActiveTabId(null);
+      setSearchDropdownOpen(false);
       setItemQuantities({});
       syncScanValue("");
       lastHandledScanRef.current = null;
@@ -630,8 +642,7 @@ export function PosPage() {
     if (!orderId) {
       try {
         await createOrderForTabWithItem(activeTabId, productId, quantity);
-      } catch {
-      }
+      } catch {}
       return;
     }
 
@@ -810,7 +821,7 @@ export function PosPage() {
     });
   };
 
-  const showSearchDropdown = Boolean(activeTabId) && searchFocused;
+  const showSearchDropdown = Boolean(activeTabId) && searchDropdownOpen;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -827,13 +838,18 @@ export function PosPage() {
               onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 syncScanValue(event.target.value)
               }
-              onFocus={() => setSearchFocused(true)}
+              onPointerDown={() => {
+                if (activeTabId) {
+                  setSearchDropdownOpen(true);
+                }
+              }}
               onBlur={() =>
-                window.setTimeout(() => setSearchFocused(false), 100)
+                window.setTimeout(() => setSearchDropdownOpen(false), 100)
               }
               onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
                 if (event.key === "Enter" || event.key === "Tab") {
                   event.preventDefault();
+                  setSearchDropdownOpen(false);
                   handleSearchSubmit();
                 }
               }}
@@ -875,6 +891,7 @@ export function PosPage() {
                         className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
                         onMouseDown={(event) => {
                           event.preventDefault();
+                          setSearchDropdownOpen(false);
                           void addProductToOrder(product.id);
                         }}
                       >
@@ -924,6 +941,7 @@ export function PosPage() {
               const isClosing =
                 closeOrderMutation.isPending &&
                 closeOrderMutation.variables?.id === tab.id;
+              const canCloseTab = !tab.orderId || isAdmin;
               return (
                 <div
                   key={tab.id}
@@ -958,43 +976,45 @@ export function PosPage() {
                   >
                     Hóa đơn {index + 1}
                   </span>
-                  <button
-                    className={cn(
-                      "rounded-md p-1 text-xs transition",
-                      active
-                        ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        : "text-white/80 hover:bg-white/10 hover:text-white"
-                    )}
-                    disabled={isClosing}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (!tab.orderId) {
-                        setTemporaryTabs((current) =>
-                          current.filter((item) => item.id !== tab.id)
-                        );
-                        setOrderDrafts((current) => {
-                          const next = { ...current };
-                          delete next[tab.id];
-                          return next;
-                        });
-                        if (activeTabId === tab.id) {
-                          setActiveTabId(null);
+                  {canCloseTab ? (
+                    <button
+                      className={cn(
+                        "rounded-md p-1 text-xs transition",
+                        active
+                          ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          : "text-white/80 hover:bg-white/10 hover:text-white"
+                      )}
+                      disabled={isClosing}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!tab.orderId) {
+                          setTemporaryTabs((current) =>
+                            current.filter((item) => item.id !== tab.id)
+                          );
+                          setOrderDrafts((current) => {
+                            const next = { ...current };
+                            delete next[tab.id];
+                            return next;
+                          });
+                          if (activeTabId === tab.id) {
+                            setActiveTabId(null);
+                          }
+                          setItemQuantities({});
+                          syncScanValue("");
+                          lastHandledScanRef.current = null;
+                          return;
                         }
-                        setItemQuantities({});
-                        syncScanValue("");
-                        lastHandledScanRef.current = null;
-                        return;
-                      }
 
-                      closeOrderMutation.mutate(tab);
-                    }}
-                  >
-                    {isClosing ? (
-                      <Spinner className="h-3.5 w-3.5" />
-                    ) : (
-                      <Icon name="close" className="h-3.5 w-3.5" />
-                    )}
-                  </button>
+                        closeOrderMutation.mutate(tab);
+                      }}
+                    >
+                      {isClosing ? (
+                        <Spinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <Icon name="close" className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  ) : null}
                 </div>
               );
             })}
@@ -1008,20 +1028,29 @@ export function PosPage() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            {isAdmin ? (
+              <button
+                className="mr-2 inline-flex h-10 items-center gap-2 rounded-md border border-white/24 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/16"
+                onClick={() => navigate("/dashboard")}
+              >
+                <Icon name="chart" className="h-4 w-4" />
+                Màn chính
+              </button>
+            ) : null}
             <button
               className="mr-2 inline-flex h-10 items-center gap-2 rounded-md border border-white/24 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/16"
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/invoices")}
             >
-              <Icon name="chart" className="h-4 w-4" />
-              Màn chính
+              <Icon name="receipt" className="h-4 w-4" />
+              Hóa đơn
             </button>
-            {(["bag", "undo", "refresh", "printer"] as const).map((icon) => (
+            {/* {(["bag", "undo", "refresh", "printer"] as const).map((icon) => (
               <ToolbarButton key={icon} icon={icon} />
             ))}
             <div className="ml-2 whitespace-nowrap text-base font-semibold">
               0968963562
             </div>
-            <ToolbarButton icon="menu" />
+            <ToolbarButton icon="menu" /> */}
           </div>
         </div>
       </header>
@@ -1181,7 +1210,7 @@ export function PosPage() {
           </section>
 
           <section className="flex min-h-[520px] flex-col rounded-md bg-white shadow-[0_10px_32px_rgba(15,23,42,0.08)]">
-            <div className="space-y-4 border-b border-slate-100 px-5 py-4">
+            {/* <div className="space-y-4 border-b border-slate-100 px-5 py-4">
               <div className="flex items-center justify-between gap-3 text-slate-700">
                 <div className="flex items-center gap-2 font-semibold">
                   <span>{user?.fullName ?? "Thu ngân"}</span>
@@ -1214,9 +1243,10 @@ export function PosPage() {
                   <Icon name="plus" className="h-5 w-5" />
                 </button>
               </div>
-            </div>
+            </div> */}
 
             <div className="space-y-4 px-5 py-5">
+              <p className="font-bold">Thông tin thanh toán</p>
               <PaymentSummaryLine
                 label="Tổng tiền hàng"
                 value={`${totalUnits}`}
@@ -1441,10 +1471,7 @@ function buildOptimisticOrder(
             )
           : item
       )
-    : [
-        ...existingItems,
-        buildOptimisticOrderItem(orderId, product, quantity),
-      ];
+    : [...existingItems, buildOptimisticOrderItem(orderId, product, quantity)];
   const totals = calculateOptimisticOrderTotals(nextItems);
 
   return {
@@ -1587,18 +1614,6 @@ function sortPendingOrders(orders: Order[]) {
   return [...orders].sort(
     (left, right) =>
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
-  );
-}
-
-function ToolbarButton({
-  icon,
-}: {
-  icon: "bag" | "undo" | "refresh" | "printer" | "menu";
-}) {
-  return (
-    <button className="flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-white transition hover:bg-white/10">
-      <Icon name={icon} className="h-5 w-5" />
-    </button>
   );
 }
 

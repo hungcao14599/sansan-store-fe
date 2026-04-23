@@ -35,6 +35,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
   const setSession = useAuthStore((state) => state.setSession);
   const {
     control,
@@ -53,7 +54,7 @@ export function LoginPage() {
     onSuccess: (data) => {
       setSession(data.accessToken, data.user);
       toast.success('Đăng nhập thành công');
-      navigate('/dashboard');
+      navigate(data.user.role === 'STAFF' ? '/pos' : '/dashboard');
     },
     onError: (error) => {
       toast.error(extractErrorMessage(error));
@@ -61,7 +62,9 @@ export function LoginPage() {
   });
 
   if (token) {
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <Navigate to={user?.role === 'STAFF' ? '/pos' : '/dashboard'} replace />
+    );
   }
 
   return (

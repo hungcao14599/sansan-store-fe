@@ -7,6 +7,7 @@ import { LoginPage } from './pages/login-page';
 import { OrdersPage } from './pages/orders-page';
 import { PosPage } from './pages/pos-page';
 import { ProductsPage } from './pages/products-page';
+import { useAuthStore } from './store/auth-store';
 
 export default function App() {
   return (
@@ -19,7 +20,7 @@ export default function App() {
           </AuthGuard>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<HomeRedirect />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/pos" element={<PosPage />} />
         <Route path="/products" element={<ProductsPage />} />
@@ -29,5 +30,12 @@ export default function App() {
         <Route path="/orders" element={<Navigate to="/invoices" replace />} />
       </Route>
     </Routes>
+  );
+}
+
+function HomeRedirect() {
+  const user = useAuthStore((state) => state.user);
+  return (
+    <Navigate to={user?.role === 'STAFF' ? '/pos' : '/dashboard'} replace />
   );
 }

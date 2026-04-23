@@ -35,6 +35,7 @@ import {
   getStatusTone,
   toNumber,
 } from "../lib/utils";
+import { useAuthStore } from "../store/auth-store";
 import type { Order } from "../types";
 
 type StatusFilter = "ALL" | "PAID" | "PENDING" | "CANCELLED" | "RETURNED";
@@ -90,6 +91,8 @@ type InvoiceListRow =
 export function OrdersPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const canManageInvoices = user?.role === "ADMIN";
   const [selected, setSelected] = useState<Order | null>(null);
   const [focusedReturnId, setFocusedReturnId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -260,6 +263,11 @@ export function OrdersPage() {
   );
 
   const openReturnModal = (order: Order) => {
+    if (!canManageInvoices) {
+      toast.error("Nhân viên chỉ được xem chi tiết hóa đơn.");
+      return;
+    }
+
     setSelected(order);
     setFocusedReturnId(null);
     setReturnItems(buildReturnDraft(order));
@@ -281,6 +289,11 @@ export function OrdersPage() {
   };
 
   const submitReturn = () => {
+    if (!canManageInvoices) {
+      toast.error("Nhân viên chỉ được xem chi tiết hóa đơn.");
+      return;
+    }
+
     if (!selected) {
       return;
     }
@@ -450,7 +463,7 @@ export function OrdersPage() {
                             ? "Xem phiếu trả"
                             : "Xem chi tiết"}
                         </Button>
-                        {row.kind === "order" ? (
+                        {canManageInvoices && row.kind === "order" ? (
                           <Button
                             variant="danger"
                             size="sm"
@@ -617,7 +630,9 @@ export function OrdersPage() {
                 </div>
               </div>
 
-              {selected.status === "PAID" && selectedReturnableItems.length ? (
+              {canManageInvoices &&
+              selected.status === "PAID" &&
+              selectedReturnableItems.length ? (
                 <div className="mt-4 flex justify-end">
                   <Button
                     variant="soft"
