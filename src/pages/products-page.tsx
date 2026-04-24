@@ -1162,14 +1162,6 @@ function FilterRadio({
   );
 }
 
-function IconButton({ icon }: { icon: "grid" | "settings" | "help" }) {
-  return (
-    <button className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50">
-      <Icon name={icon} className="h-4 w-4" />
-    </button>
-  );
-}
-
 function PaginationButton({
   icon,
   disabled,
