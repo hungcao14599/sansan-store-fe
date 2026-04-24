@@ -21,7 +21,9 @@ import { useToast } from "../components/toast-provider";
 import {
   createProduct,
   deactivateProduct,
+  downloadProductsExcel,
   extractErrorMessage,
+  getProductGroups,
   getProducts,
   updateProduct,
 } from "../lib/api";
@@ -33,6 +35,7 @@ import type { Product } from "../types";
 const productSchema = z.object({
   sku: z.string().min(2, "SKU tối thiểu 2 ký tự"),
   name: z.string().min(2, "Tên sản phẩm là bắt buộc"),
+  productGroupId: z.string().optional(),
   unit: z.string().min(1, "Đơn vị là bắt buộc"),
   price: z.number({ invalid_type_error: "Nhập giá bán" }).positive(),
   costPrice: z.number().min(0).optional().nullable(),
@@ -63,6 +66,7 @@ export function ProductsPage() {
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("ALL");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("ALL");
+  const [productGroupFilter, setProductGroupFilter] = useState("");
   const [productTypeFilter, setProductTypeFilter] = useState("");
   const [forecastMode, setForecastMode] = useState<ForecastFilterMode>("ALL");
   const [forecastLevel, setForecastLevel] =
@@ -73,6 +77,7 @@ export function ProductsPage() {
   const [createdTo, setCreatedTo] = useState("");
   const [pageSize, setPageSize] = useState<number>(15);
   const [currentPage, setCurrentPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [starredProductIds, setStarredProductIds] = useState<string[]>([]);
 
@@ -80,6 +85,21 @@ export function ProductsPage() {
     queryKey: ["products"],
     queryFn: getProducts,
   });
+  const productGroupsQuery = useQuery({
+    queryKey: ["product-groups"],
+    queryFn: () => getProductGroups(),
+  });
+  const formProductGroups = useMemo(() => {
+    const groups = productGroupsQuery.data ?? [];
+    if (
+      editing?.productGroup &&
+      !groups.some((group) => group.id === editing.productGroupId)
+    ) {
+      return [...groups, editing.productGroup];
+    }
+
+    return groups;
+  }, [editing?.productGroup, editing?.productGroupId, productGroupsQuery.data]);
 
   const {
     control,
@@ -91,6 +111,7 @@ export function ProductsPage() {
     defaultValues: {
       sku: "",
       name: "",
+      productGroupId: "",
       unit: "sp",
       price: 0,
       costPrice: null,
@@ -109,6 +130,7 @@ export function ProductsPage() {
       reset({
         sku: editing.sku,
         name: editing.name,
+        productGroupId: editing.productGroupId ?? "",
         unit: editing.unit,
         price: Number(editing.price),
         costPrice: editing.costPrice ? Number(editing.costPrice) : null,
@@ -126,6 +148,7 @@ export function ProductsPage() {
     reset({
       sku: "",
       name: "",
+      productGroupId: "",
       unit: "sp",
       price: 0,
       costPrice: null,
@@ -150,6 +173,7 @@ export function ProductsPage() {
         return updateProduct(editing.id, {
           sku: values.sku,
           name: values.name,
+          productGroupId: values.productGroupId ?? "",
           unit: values.unit,
           price: values.price,
           costPrice: values.costPrice ?? undefined,
@@ -163,6 +187,7 @@ export function ProductsPage() {
 
       return createProduct({
         ...values,
+        productGroupId: values.productGroupId ?? "",
         costPrice: values.costPrice ?? undefined,
         barcode: values.barcode || undefined,
         description: values.description || undefined,
@@ -172,6 +197,7 @@ export function ProductsPage() {
       toast.success(editing ? "Đã cập nhật sản phẩm" : "Đã tạo sản phẩm");
       closeModal();
       await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await queryClient.invalidateQueries({ queryKey: ["product-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (error) => {
@@ -197,7 +223,12 @@ export function ProductsPage() {
       const normalizedProductType = productTypeFilter.trim().toLowerCase();
       const matchesSearch =
         !normalizedSearch ||
-        [product.sku, product.name, product.barcode ?? ""]
+        [
+          product.sku,
+          product.name,
+          product.productGroup?.name ?? "",
+          product.barcode ?? "",
+        ]
           .join(" ")
           .toLowerCase()
           .includes(normalizedSearch);
@@ -217,6 +248,8 @@ export function ProductsPage() {
       const matchesProductType =
         !normalizedProductType ||
         product.unit.toLowerCase().includes(normalizedProductType);
+      const matchesProductGroup =
+        !productGroupFilter || product.productGroupId === productGroupFilter;
       const matchesForecast =
         forecastMode === "ALL" ||
         (forecastLevel === "OUT" ? quantity <= 0 : quantity <= minStock);
@@ -237,6 +270,7 @@ export function ProductsPage() {
         matchesSearch &&
         matchesStock &&
         matchesActive &&
+        matchesProductGroup &&
         matchesProductType &&
         matchesForecast &&
         matchesCreatedTime
@@ -249,6 +283,7 @@ export function ProductsPage() {
     createdTo,
     forecastLevel,
     forecastMode,
+    productGroupFilter,
     productTypeFilter,
     query.data,
     search,
@@ -259,10 +294,10 @@ export function ProductsPage() {
     () =>
       Array.from(
         new Set(
-          (query.data ?? []).map((product) => product.unit).filter(Boolean)
-        )
+          (query.data ?? []).map((product) => product.unit).filter(Boolean),
+        ),
       ).sort((left, right) => left.localeCompare(right)),
-    [query.data]
+    [query.data],
   );
 
   const summary = useMemo(
@@ -272,10 +307,10 @@ export function ProductsPage() {
       lowStock:
         query.data?.filter(
           (item) =>
-            (item.inventory?.quantity ?? 0) <= (item.inventory?.minStock ?? 0)
+            (item.inventory?.quantity ?? 0) <= (item.inventory?.minStock ?? 0),
         ).length ?? 0,
     }),
-    [query.data]
+    [query.data],
   );
 
   useEffect(() => {
@@ -287,6 +322,7 @@ export function ProductsPage() {
     createdTo,
     forecastLevel,
     forecastMode,
+    productGroupFilter,
     productTypeFilter,
     search,
     stockFilter,
@@ -295,10 +331,10 @@ export function ProductsPage() {
   useEffect(() => {
     const validIds = new Set((query.data ?? []).map((item) => item.id));
     setSelectedProductIds((current) =>
-      current.filter((item) => validIds.has(item))
+      current.filter((item) => validIds.has(item)),
     );
     setStarredProductIds((current) =>
-      current.filter((item) => validIds.has(item))
+      current.filter((item) => validIds.has(item)),
     );
   }, [query.data]);
 
@@ -317,7 +353,7 @@ export function ProductsPage() {
 
   const currentPageIds = useMemo(
     () => paginatedProducts.map((product) => product.id),
-    [paginatedProducts]
+    [paginatedProducts],
   );
 
   const allCurrentPageSelected =
@@ -358,7 +394,7 @@ export function ProductsPage() {
     setSelectedProductIds((current) =>
       current.includes(productId)
         ? current.filter((item) => item !== productId)
-        : [...current, productId]
+        : [...current, productId],
     );
   };
 
@@ -376,8 +412,52 @@ export function ProductsPage() {
     setStarredProductIds((current) =>
       current.includes(productId)
         ? current.filter((item) => item !== productId)
-        : [...current, productId]
+        : [...current, productId],
     );
+  };
+
+  const handleExportProducts = async () => {
+    try {
+      setIsExporting(true);
+      const hasSelection = selectedProductIds.length > 0;
+      const { blob, filename } = await downloadProductsExcel(
+        hasSelection
+          ? {
+              ids: selectedProductIds.join(","),
+            }
+          : {
+              q: search.trim() || undefined,
+              stock: stockFilter,
+              active: activeFilter,
+              unit: productTypeFilter.trim() || undefined,
+              productGroupId: productGroupFilter || undefined,
+              forecastMode,
+              forecastLevel,
+              createdFrom:
+                createdTimeMode === "CUSTOM"
+                  ? createdFrom || undefined
+                  : undefined,
+              createdTo:
+                createdTimeMode === "CUSTOM"
+                  ? createdTo || undefined
+                  : undefined,
+            },
+      );
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Đã xuất file Excel hàng hóa.");
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -435,7 +515,7 @@ export function ProductsPage() {
                       value={forecastLevel}
                       onChange={(event) =>
                         setForecastLevel(
-                          event.target.value as ForecastFilterLevel
+                          event.target.value as ForecastFilterLevel,
                         )
                       }
                     >
@@ -479,6 +559,25 @@ export function ProductsPage() {
             />
 
             <SidebarBlock
+              title="Nhóm hàng hóa"
+              content={
+                <SelectInput
+                  value={productGroupFilter}
+                  onChange={(event) =>
+                    setProductGroupFilter(event.target.value)
+                  }
+                >
+                  <option value="">Tất cả</option>
+                  {(productGroupsQuery.data ?? []).map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              }
+            />
+
+            <SidebarBlock
               title="Loại hàng"
               content={
                 <SelectInput
@@ -511,7 +610,7 @@ export function ProductsPage() {
                       "rounded-md border px-4 py-2 text-sm font-medium transition",
                       activeFilter === value
                         ? "border-[#1677ff] bg-[#1677ff] text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                     )}
                     onClick={() => setActiveFilter(value as ActiveFilter)}
                   >
@@ -558,22 +657,19 @@ export function ProductsPage() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() =>
-                  toast.info("Chức năng export chưa được nối API.")
-                }
+                busy={isExporting}
+                disabled={query.isLoading}
+                onClick={handleExportProducts}
               >
                 <Icon name="download" className="h-4 w-4" />
                 Xuất file
               </Button>
-              <IconButton icon="grid" />
-              <IconButton icon="settings" />
-              <IconButton icon="help" />
             </div>
           </div>
 
           <Panel className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] table-fixed text-sm">
+              <table className="w-full min-w-[1320px] table-fixed text-sm">
                 <thead className="border-b border-[#b8d0ee] bg-[#d9e9fb] text-slate-700">
                   <tr>
                     <th className="w-10 px-3 py-3.5 text-left font-semibold">
@@ -594,6 +690,9 @@ export function ProductsPage() {
                     </th>
                     <th className="w-[238px] px-4 py-3.5 text-left font-semibold">
                       Tên hàng
+                    </th>
+                    <th className="w-[156px] px-4 py-3.5 text-left font-semibold">
+                      Nhóm hàng
                     </th>
                     <th className="w-[126px] px-4 py-3.5 text-right font-semibold">
                       Giá bán
@@ -619,7 +718,7 @@ export function ProductsPage() {
                   {query.isLoading ? (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={12}
                         className="px-6 py-12 text-center text-slate-500"
                       >
                         Đang tải dữ liệu hàng hóa...
@@ -629,7 +728,7 @@ export function ProductsPage() {
                     paginatedProducts.map((product) => {
                       const quantity = product.inventory?.quantity ?? 0;
                       const isSelected = selectedProductIds.includes(
-                        product.id
+                        product.id,
                       );
                       const isStarred = starredProductIds.includes(product.id);
 
@@ -638,7 +737,7 @@ export function ProductsPage() {
                           key={product.id}
                           className={cn(
                             "border-b border-slate-100 transition hover:bg-slate-50/80",
-                            isSelected ? "bg-blue-50/40" : "bg-white"
+                            isSelected ? "bg-blue-50/40" : "bg-white",
                           )}
                         >
                           <td className="px-3 py-3.5 align-top">
@@ -660,7 +759,7 @@ export function ProductsPage() {
                                   "h-4 w-4",
                                   isStarred
                                     ? "text-amber-400"
-                                    : "text-slate-300"
+                                    : "text-slate-300",
                                 )}
                                 fill={isStarred ? "currentColor" : "none"}
                                 strokeWidth={1.7}
@@ -686,6 +785,9 @@ export function ProductsPage() {
                               {product.name}
                             </button>
                           </td>
+                          <td className="px-4 py-3.5 align-top text-slate-600">
+                            {product.productGroup?.name || "---"}
+                          </td>
                           <td className="px-4 py-3.5 align-top text-right font-medium text-slate-900">
                             {formatMoneyValue(product.price)}
                           </td>
@@ -710,7 +812,7 @@ export function ProductsPage() {
                   ) : (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={12}
                         className="px-6 py-14 text-center text-slate-500"
                       >
                         Không có sản phẩm phù hợp với bộ lọc hiện tại.
@@ -799,15 +901,6 @@ export function ProductsPage() {
                 </Field>
               )}
             />
-            <Controller
-              control={control}
-              name="unit"
-              render={({ field }) => (
-                <Field label="Đơn vị" error={errors.unit?.message}>
-                  <TextInput {...field} />
-                </Field>
-              )}
-            />
           </div>
 
           <Controller
@@ -819,6 +912,36 @@ export function ProductsPage() {
               </Field>
             )}
           />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Controller
+              control={control}
+              name="productGroupId"
+              render={({ field }) => (
+                <Field label="Nhóm hàng hóa">
+                  <SelectInput {...field} value={field.value ?? ""}>
+                    <option value="">Chưa chọn nhóm</option>
+                    {formProductGroups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                        {!group.isActive ? " (ngưng dùng)" : ""}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="unit"
+              render={({ field }) => (
+                <Field label="Đơn vị" error={errors.unit?.message}>
+                  <TextInput {...field} />
+                </Field>
+              )}
+            />
+          </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <Controller
@@ -1030,7 +1153,7 @@ function FilterRadio({
           "h-4 w-4 rounded-md border",
           checked
             ? "border-[#1677ff] bg-[#1677ff]"
-            : "border-slate-300 bg-white"
+            : "border-slate-300 bg-white",
         )}
       />
       <span>{label}</span>
@@ -1062,7 +1185,7 @@ function PaginationButton({
         "flex h-9 w-9 items-center justify-center rounded-md border transition",
         disabled
           ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
-          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50",
       )}
       disabled={disabled}
       onClick={onClick}

@@ -35,6 +35,12 @@ const navigationItems = [
     roles: ["ADMIN"] as const,
   },
   {
+    key: "/product-groups",
+    label: "Nhóm sản phẩm",
+    icon: "bookmark" as const,
+    roles: ["ADMIN"] as const,
+  },
+  {
     key: "/inventory",
     label: "Quản lý tồn kho",
     icon: "grid" as const,

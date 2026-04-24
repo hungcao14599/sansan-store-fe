@@ -338,7 +338,7 @@ export function OrdersPage() {
         </div>
       </div>
 
-      <Panel className="p-5">
+      <div className="">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative min-w-[300px] flex-1 max-w-xl">
             <TextInput
@@ -371,7 +371,7 @@ export function OrdersPage() {
             ))}
           </div>
         </div>
-      </Panel>
+      </div>
 
       <Panel className="overflow-hidden">
         <div className="overflow-x-auto">

@@ -1,6 +1,13 @@
 import axios from "axios";
 import { useAuthStore } from "../store/auth-store";
-import type { Inventory, Order, Product, RevenueReport, User } from "../types";
+import type {
+  Inventory,
+  Order,
+  Product,
+  ProductGroup,
+  RevenueReport,
+  User,
+} from "../types";
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:3000",
@@ -69,10 +76,77 @@ export async function getProducts() {
   return response.data;
 }
 
+export async function getProductGroups(params?: { includeInactive?: boolean }) {
+  const response = await api.get<ProductGroup[]>("/products/groups", {
+    params,
+  });
+  return response.data;
+}
+
+export async function createProductGroup(payload: {
+  name: string;
+  description?: string;
+}) {
+  const response = await api.post<ProductGroup>("/products/groups", payload);
+  return response.data;
+}
+
+export async function updateProductGroup(
+  productGroupId: string,
+  payload: {
+    name?: string;
+    description?: string;
+    isActive?: boolean;
+  },
+) {
+  const response = await api.patch<ProductGroup>(
+    `/products/groups/${productGroupId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deactivateProductGroup(productGroupId: string) {
+  const response = await api.delete<ProductGroup>(
+    `/products/groups/${productGroupId}`,
+  );
+  return response.data;
+}
+
+export type ProductExportParams = {
+  q?: string;
+  stock?: "ALL" | "IN_STOCK" | "OUT_OF_STOCK";
+  active?: "ALL" | "YES" | "NO";
+  unit?: string;
+  productGroupId?: string;
+  forecastMode?: "ALL" | "CUSTOM";
+  forecastLevel?: "LOW" | "OUT";
+  createdFrom?: string;
+  createdTo?: string;
+  ids?: string;
+};
+
+export async function downloadProductsExcel(params?: ProductExportParams) {
+  const response = await api.get<Blob>("/products/export", {
+    params,
+    responseType: "blob",
+  });
+
+  const contentDisposition = response.headers["content-disposition"];
+  const matchedFilename =
+    contentDisposition?.match(/filename="?([^"]+)"?/i)?.[1];
+
+  return {
+    blob: response.data,
+    filename: matchedFilename ?? "hang-hoa.xlsx",
+  };
+}
+
 export type ProductSearchParams = {
   q?: string;
   limit?: number;
   offset?: number;
+  inStockOnly?: boolean;
 };
 
 export type ProductSearchResponse = {

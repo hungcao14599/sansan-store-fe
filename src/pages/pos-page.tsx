@@ -90,6 +90,7 @@ export function PosPage() {
         q: deferredSearchValue || undefined,
         limit: PRODUCT_SUGGESTION_BATCH_SIZE,
         offset: pageParam,
+        inStockOnly: true,
       }),
     enabled:
       Boolean(activeTabId) &&
@@ -132,7 +133,10 @@ export function PosPage() {
     : createDefaultDraft();
 
   const searchSuggestions = useMemo(
-    () => productsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    () =>
+      (productsQuery.data?.pages.flatMap((page) => page.items) ?? []).filter(
+        (product) => (product.inventory?.quantity ?? 0) > 0
+      ),
     [productsQuery.data]
   );
 
@@ -236,6 +240,16 @@ export function PosPage() {
     }
 
     updateDraft(activeTabId, patch);
+  };
+
+  const showInventoryAwareError = (error: unknown) => {
+    const message = extractErrorMessage(error);
+    if (isInventoryWarningMessage(message)) {
+      toast.warning(message);
+      return;
+    }
+
+    toast.error(message);
   };
 
   const switchOrder = (tabId: string) => {
@@ -492,7 +506,7 @@ export function PosPage() {
             item.id === tabId ? { ...item, orderId: null } : item
           )
         );
-        toast.error(extractErrorMessage(error));
+        showInventoryAwareError(error);
         throw error;
       })
       .finally(() => {
@@ -545,7 +559,7 @@ export function PosPage() {
       if (context?.previousOrders) {
         queryClient.setQueryData(posOrdersQueryKey, context.previousOrders);
       }
-      toast.error(extractErrorMessage(error));
+      showInventoryAwareError(error);
     },
   });
 
@@ -619,7 +633,7 @@ export function PosPage() {
       ]);
     },
     onError: (error) => {
-      toast.error(extractErrorMessage(error));
+      showInventoryAwareError(error);
     },
   });
 
@@ -678,7 +692,7 @@ export function PosPage() {
     if (!matchedProduct || addItemMutation.isPending) {
       if (showNotFoundMessage && scanValueRef.current.trim()) {
         toast.warning(
-          "Không tìm thấy sản phẩm theo barcode, SKU hoặc từ khóa."
+          "Không tìm thấy sản phẩm còn hàng theo barcode, SKU hoặc từ khóa."
         );
       }
       return;
@@ -928,7 +942,7 @@ export function PosPage() {
                   </div>
                 ) : (
                   <div className="px-4 py-5 text-sm text-slate-500">
-                    Không tìm thấy sản phẩm phù hợp.
+                    Không tìm thấy sản phẩm còn hàng phù hợp.
                   </div>
                 )}
               </div>
@@ -1446,6 +1460,15 @@ function createTemporaryTab(): TemporaryTab {
 
 function isTemporaryOrderId(orderId?: string | null) {
   return Boolean(orderId?.startsWith(TEMP_ORDER_ID_PREFIX));
+}
+
+function isInventoryWarningMessage(message: string) {
+  const normalizedMessage = message.toLowerCase();
+  return (
+    message.includes("hết hàng") ||
+    message.includes("không đủ") ||
+    normalizedMessage.includes("insufficient stock")
+  );
 }
 
 function buildOptimisticOrder(

@@ -27,8 +27,6 @@ export function InventoryPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [codeFilter, setCodeFilter] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("ALL");
   const [pageSize, setPageSize] = useState<number>(15);
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,30 +85,21 @@ export function InventoryPage() {
           .toLowerCase()
           .includes(keyword);
 
-      const matchesCode =
-        !codeFilter.trim() ||
-        item.product.sku
-          .toLowerCase()
-          .includes(codeFilter.trim().toLowerCase());
-      const matchesName =
-        !nameFilter.trim() ||
-        item.product.name
-          .toLowerCase()
-          .includes(nameFilter.trim().toLowerCase());
       const matchesStock =
         stockFilter === "ALL" ||
         (stockFilter === "LOW" && quantity <= item.minStock) ||
         (stockFilter === "IN_STOCK" && quantity > 0) ||
         (stockFilter === "OUT_OF_STOCK" && quantity <= 0);
 
-      return matchesSearch && matchesCode && matchesName && matchesStock;
+      return matchesSearch && matchesStock;
     });
-  }, [codeFilter, nameFilter, query.data, search, stockFilter]);
+  }, [query.data, search, stockFilter]);
 
   const inventorySummary = useMemo(() => {
     const inventory = query.data ?? [];
     return {
       total: inventory.length,
+      inStock: inventory.filter((item) => item.quantity > 0).length,
       lowStock: inventory.filter((item) => item.quantity <= item.minStock)
         .length,
       outOfStock: inventory.filter((item) => item.quantity <= 0).length,
@@ -119,11 +108,11 @@ export function InventoryPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, codeFilter, nameFilter, stockFilter]);
+  }, [search, stockFilter]);
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredInventory.length / pageSize),
+    Math.ceil(filteredInventory.length / pageSize)
   );
 
   useEffect(() => {
@@ -186,7 +175,6 @@ export function InventoryPage() {
             kho trực tiếp trên từng mặt hàng.
           </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="blue">{inventorySummary.total} mặt hàng</Badge>
           <Badge tone="amber">{inventorySummary.lowStock} sắp hết</Badge>
@@ -194,65 +182,10 @@ export function InventoryPage() {
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[250px_minmax(0,1fr)]">
-        <Panel className="p-5">
-          <div className="space-y-6">
-            <SidebarBlock title="Trạng thái tồn kho">
-              <SelectInput
-                value={stockFilter}
-                onChange={(event) =>
-                  setStockFilter(event.target.value as StockFilter)
-                }
-              >
-                <option value="ALL">Tất cả</option>
-                <option value="LOW">Sắp hết hàng</option>
-                <option value="IN_STOCK">Còn hàng</option>
-                <option value="OUT_OF_STOCK">Hết hàng</option>
-              </SelectInput>
-            </SidebarBlock>
-
-            <SidebarBlock title="Mã hàng">
-              <TextInput
-                type="search"
-                value={codeFilter}
-                onChange={(event) => setCodeFilter(event.target.value)}
-                placeholder="Tìm theo mã hàng"
-              />
-            </SidebarBlock>
-
-            <SidebarBlock title="Tên hàng">
-              <TextInput
-                value={nameFilter}
-                onChange={(event) => setNameFilter(event.target.value)}
-                placeholder="Tìm theo tên hàng"
-              />
-            </SidebarBlock>
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-900">
-                Tổng quan nhanh
-              </div>
-              <div className="mt-4 space-y-3 text-sm text-slate-600">
-                <SummaryLine
-                  label="Tổng mặt hàng"
-                  value={`${inventorySummary.total}`}
-                />
-                <SummaryLine
-                  label="Sắp hết"
-                  value={`${inventorySummary.lowStock}`}
-                />
-                <SummaryLine
-                  label="Hết hàng"
-                  value={`${inventorySummary.outOfStock}`}
-                />
-              </div>
-            </div>
-          </div>
-        </Panel>
-
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-[300px] max-w-xl flex-1">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-[320px] flex-1 flex-wrap items-center gap-3">
+            <div className="min-w-[280px] max-w-2xl flex-1">
               <TextInput
                 type="search"
                 value={search}
@@ -260,268 +193,248 @@ export function InventoryPage() {
                 placeholder="Tìm theo mã hoặc tên hàng"
               />
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="soft"
-                onClick={() =>
-                  toast.info("Chọn số dương để nhập thêm, số âm để giảm kho.")
+            <div className="w-full sm:w-[240px]">
+              <SelectInput
+                aria-label="Trạng thái tồn kho"
+                value={stockFilter}
+                onChange={(event) =>
+                  setStockFilter(event.target.value as StockFilter)
                 }
+                // className="bg-white"
               >
-                <Icon name="plus" className="h-4 w-4" />
-                Điều chỉnh kho
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  toast.info("Chức năng import chưa được nối API.")
-                }
-              >
-                <Icon name="upload" className="h-4 w-4" />
-                Import
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  toast.info("Chức năng export chưa được nối API.")
-                }
-              >
-                <Icon name="download" className="h-4 w-4" />
-                Xuất file
-              </Button>
-              <SmallSquare icon="grid" />
-              <SmallSquare icon="settings" />
-              <SmallSquare icon="help" />
+                <option value="ALL">Tất cả</option>
+                <option value="LOW">Sắp hết hàng</option>
+                <option value="IN_STOCK">Còn hàng</option>
+                <option value="OUT_OF_STOCK">Hết hàng</option>
+              </SelectInput>
             </div>
           </div>
 
-          <Panel className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-[#eaf3ff] text-slate-700">
-                  <tr>
-                    <th className="px-4 py-4 text-left font-semibold">
-                      Mã hàng
-                    </th>
-                    <th className="px-4 py-4 text-left font-semibold">
-                      Tên hàng
-                    </th>
-                    <th className="px-4 py-4 text-right font-semibold">
-                      Tồn hiện tại
-                    </th>
-                    <th className="px-4 py-4 text-right font-semibold">
-                      Tồn tối thiểu
-                    </th>
-                    <th className="px-4 py-4 text-center font-semibold">
-                      Trạng thái
-                    </th>
-                    <th className="px-4 py-4 text-right font-semibold">
-                      Điều chỉnh
-                    </th>
-                    <th className="px-4 py-4 text-left font-semibold">
-                      Cập nhật cuối
-                    </th>
-                    <th className="px-4 py-4 text-right font-semibold">
-                      Thao tác
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {query.isLoading ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-6 py-12 text-center text-slate-500"
-                      >
-                        Đang tải dữ liệu tồn kho...
-                      </td>
-                    </tr>
-                  ) : paginatedInventory.length ? (
-                    paginatedInventory.map((item) => {
-                      const draft = draftAdjustments[item.productId] ?? {
-                        delta: "",
-                        minStock: String(item.minStock ?? 0),
-                      };
-                      const isSaving =
-                        saveMutation.isPending &&
-                        saveMutation.variables?.productId === item.productId;
-                      const statusTone =
-                        item.quantity <= 0
-                          ? "red"
-                          : item.quantity <= item.minStock
-                            ? "amber"
-                            : "green";
-                      const statusLabel =
-                        item.quantity <= 0
-                          ? "Hết hàng"
-                          : item.quantity <= item.minStock
-                            ? "Sắp hết"
-                            : "Ổn định";
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className="border-t border-slate-100 hover:bg-slate-50/70"
-                        >
-                          <td className="px-4 py-4 font-medium text-slate-700">
-                            {item.product.sku}
-                          </td>
-                          <td className="px-4 py-4 text-slate-900">
-                            {item.product.name}
-                          </td>
-                          <td className="px-4 py-4 text-right text-base font-semibold text-slate-900">
-                            {item.quantity}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="ml-auto max-w-[110px]">
-                              <NumberInput
-                                value={draft.minStock}
-                                onChange={(event) =>
-                                  setDraftAdjustments((current) => ({
-                                    ...current,
-                                    [item.productId]: {
-                                      ...(current[item.productId] ?? draft),
-                                      minStock: event.target.value,
-                                    },
-                                  }))
-                                }
-                                className="h-10 text-right"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            <Badge tone={statusTone}>{statusLabel}</Badge>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="ml-auto max-w-[120px]">
-                              <NumberInput
-                                value={draft.delta}
-                                onChange={(event) =>
-                                  setDraftAdjustments((current) => ({
-                                    ...current,
-                                    [item.productId]: {
-                                      ...(current[item.productId] ?? draft),
-                                      delta: event.target.value,
-                                    },
-                                  }))
-                                }
-                                placeholder="+10 / -3"
-                                className="h-10 text-right"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-slate-500">
-                            {formatDateTime(item.updatedAt)}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="flex justify-end">
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                busy={isSaving}
-                                onClick={() => handleSaveInventory(item)}
-                              >
-                                Lưu
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-6 py-14 text-center text-slate-500"
-                      >
-                        Không có mặt hàng phù hợp với điều kiện tìm kiếm.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 py-3 text-sm text-slate-500">
-              <div className="flex items-center gap-2">
-                <span>Hiển thị</span>
-                <SelectInput
-                  value={String(pageSize)}
-                  onChange={(event) => {
-                    setPageSize(Number(event.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="h-9 w-[104px] rounded-md border-slate-300 bg-white"
-                >
-                  {pageSizeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option} dòng
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <PaginationButton
-                  icon="chevronsLeft"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(1)}
-                />
-                <PaginationButton
-                  icon="chevronLeft"
-                  disabled={currentPage === 1}
-                  onClick={() =>
-                    setCurrentPage((page) => Math.max(1, page - 1))
-                  }
-                />
-                <div className="flex h-9 min-w-[42px] items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700">
-                  {currentPage}
-                </div>
-                <PaginationButton
-                  icon="chevronRight"
-                  disabled={currentPage === totalPages}
-                  onClick={() =>
-                    setCurrentPage((page) => Math.min(totalPages, page + 1))
-                  }
-                />
-                <PaginationButton
-                  icon="chevronsRight"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(totalPages)}
-                />
-                <span className="ml-2 whitespace-nowrap">
-                  {paginationRange.from} - {paginationRange.to} trong{" "}
-                  {filteredInventory.length} mặt hàng
-                </span>
-              </div>
-            </div>
-          </Panel>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="soft"
+              onClick={() =>
+                toast.info("Chọn số dương để nhập thêm, số âm để giảm kho.")
+              }
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Điều chỉnh kho
+            </Button>
+            {/* <Button
+              variant="secondary"
+              onClick={() => toast.info("Chức năng import chưa được nối API.")}
+            >
+              <Icon name="upload" className="h-4 w-4" />
+              Import
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => toast.info("Chức năng export chưa được nối API.")}
+            >
+              <Icon name="download" className="h-4 w-4" />
+              Xuất file
+            </Button> */}
+          </div>
         </div>
+
+        <Panel className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-[#eaf3ff] text-slate-700">
+                <tr>
+                  <th className="px-4 py-4 text-left font-semibold">Mã hàng</th>
+                  <th className="px-4 py-4 text-left font-semibold">
+                    Tên hàng
+                  </th>
+                  <th className="px-4 py-4 text-right font-semibold">
+                    Tồn hiện tại
+                  </th>
+                  <th className="px-4 py-4 text-right font-semibold">
+                    Tồn tối thiểu
+                  </th>
+                  <th className="px-4 py-4 text-center font-semibold">
+                    Trạng thái
+                  </th>
+                  <th className="px-4 py-4 text-right font-semibold">
+                    Điều chỉnh
+                  </th>
+                  <th className="px-4 py-4 text-right font-semibold">
+                    Cập nhật cuối
+                  </th>
+                  <th className="px-4 py-4 text-right font-semibold">
+                    Thao tác
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {query.isLoading ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-6 py-12 text-center text-slate-500"
+                    >
+                      Đang tải dữ liệu tồn kho...
+                    </td>
+                  </tr>
+                ) : paginatedInventory.length ? (
+                  paginatedInventory.map((item) => {
+                    const draft = draftAdjustments[item.productId] ?? {
+                      delta: "",
+                      minStock: String(item.minStock ?? 0),
+                    };
+                    const isSaving =
+                      saveMutation.isPending &&
+                      saveMutation.variables?.productId === item.productId;
+                    const statusTone =
+                      item.quantity <= 0
+                        ? "red"
+                        : item.quantity <= item.minStock
+                        ? "amber"
+                        : "green";
+                    const statusLabel =
+                      item.quantity <= 0
+                        ? "Hết hàng"
+                        : item.quantity <= item.minStock
+                        ? "Sắp hết"
+                        : "Ổn định";
+
+                    return (
+                      <tr
+                        key={item.id}
+                        className="border-t border-slate-100 hover:bg-slate-50/70"
+                      >
+                        <td className="px-4 py-4 font-medium text-slate-700">
+                          {item.product.sku}
+                        </td>
+                        <td className="px-4 py-4 text-slate-900">
+                          {item.product.name}
+                        </td>
+                        <td className="px-4 py-4 text-right text-base font-semibold text-slate-900">
+                          {item.quantity}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="ml-auto max-w-[110px]">
+                            <NumberInput
+                              value={draft.minStock}
+                              onChange={(event) =>
+                                setDraftAdjustments((current) => ({
+                                  ...current,
+                                  [item.productId]: {
+                                    ...(current[item.productId] ?? draft),
+                                    minStock: event.target.value,
+                                  },
+                                }))
+                              }
+                              className="h-10 text-right"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge tone={statusTone}>{statusLabel}</Badge>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="ml-auto max-w-[120px]">
+                            <NumberInput
+                              value={draft.delta}
+                              onChange={(event) =>
+                                setDraftAdjustments((current) => ({
+                                  ...current,
+                                  [item.productId]: {
+                                    ...(current[item.productId] ?? draft),
+                                    delta: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="+10 / -3"
+                              className="h-10 text-right"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-right text-slate-500">
+                          {formatDateTime(item.updatedAt)}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              busy={isSaving}
+                              onClick={() => handleSaveInventory(item)}
+                            >
+                              Lưu
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-6 py-14 text-center text-slate-500"
+                    >
+                      Không có mặt hàng phù hợp với điều kiện tìm kiếm.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 py-3 text-sm text-slate-500">
+            <div className="flex items-center gap-2">
+              <span>Hiển thị</span>
+              <SelectInput
+                value={String(pageSize)}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setCurrentPage(1);
+                }}
+                className="h-9 w-[104px] rounded-md border-slate-300 bg-white"
+              >
+                {pageSizeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option} dòng
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <PaginationButton
+                icon="chevronsLeft"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+              />
+              <PaginationButton
+                icon="chevronLeft"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              />
+              <div className="flex h-9 min-w-[42px] items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700">
+                {currentPage}
+              </div>
+              <PaginationButton
+                icon="chevronRight"
+                disabled={currentPage === totalPages}
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+              />
+              <PaginationButton
+                icon="chevronsRight"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+              />
+              <span className="ml-2 whitespace-nowrap">
+                {paginationRange.from} - {paginationRange.to} trong{" "}
+                {filteredInventory.length} mặt hàng
+              </span>
+            </div>
+          </div>
+        </Panel>
       </div>
-    </div>
-  );
-}
-
-function SidebarBlock({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-3 text-sm font-semibold text-slate-900">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function SummaryLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span>{label}</span>
-      <span className="font-semibold text-slate-900">{value}</span>
     </div>
   );
 }
@@ -549,7 +462,7 @@ function PaginationButton({
         "flex h-9 w-9 items-center justify-center rounded-md border transition",
         disabled
           ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
-          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50",
+          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
       )}
       disabled={disabled}
       onClick={onClick}

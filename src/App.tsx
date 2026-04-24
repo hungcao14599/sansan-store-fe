@@ -6,6 +6,7 @@ import { InventoryPage } from './pages/inventory-page';
 import { LoginPage } from './pages/login-page';
 import { OrdersPage } from './pages/orders-page';
 import { PosPage } from './pages/pos-page';
+import { ProductGroupsPage } from './pages/product-groups-page';
 import { ProductsPage } from './pages/products-page';
 import { useAuthStore } from './store/auth-store';
 
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/pos" element={<PosPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/product-groups" element={<ProductGroupsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/pricebook" element={<Navigate to="/inventory" replace />} />
         <Route path="/invoices" element={<OrdersPage />} />

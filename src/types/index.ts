@@ -16,11 +16,25 @@ export type Inventory = {
   product: Product;
 };
 
+export type ProductGroup = {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  _count?: {
+    products: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Product = {
   id: string;
   sku: string;
   barcode?: string | null;
   name: string;
+  productGroupId?: string | null;
+  productGroup?: ProductGroup | null;
   description?: string | null;
   unit: string;
   price: string | number;
